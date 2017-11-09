@@ -1,0 +1,226 @@
+# Copyright (c) 2017 Paolo Smiraglia <paolo.smiraglia@gmail.com>
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+heat_template_version: 2016-04-08
+
+description: >
+  The stack creates a instance to run containers based on Docker. The instance
+  uses two Cinder volumes. The former (/dev/vda) will contain the system data
+  while the latter (/dev/vdb) the Docker data (/var/lib/docker).
+
+parameters:
+  instance_prefix:
+    label: "Instance prefix"
+    type: string
+    default: "docker-machine"
+  instance_suffix:
+    label: "Instance suffix"
+    type: number
+    default: 0
+  system_volume_size:
+    label: "System volume size"
+    type: number
+    default: 5
+  docker_volume_size:
+    label: "Docker volume size"
+    type: number
+    default: 5
+  security_groups:
+    label: "Security groups"
+    type: comma_delimited_list
+  image_id:
+    label: "Image ID"
+    type: string
+  flavor_id:
+    label: "Flavor ID"
+    type: string
+  network_id:
+    label: "Network ID"
+    type: string
+  subnet_id:
+    label: "Subnet ID"
+    type: string
+  key_name:
+    label: "Keypair name"
+    type: string
+
+resources:
+  system_volume:
+    type: OS::Cinder::Volume
+    properties:
+      name:
+        str_replace:
+          template: volume-<%prefix%>-<%suffix%>-system
+          params:
+            "<%prefix%>": { get_param: instance_prefix }
+            "<%suffix%>": { get_param: instance_suffix }
+      size: { get_param: system_volume_size }
+      image: { get_param: image_id }
+      volume_type: "Standard"
+
+  docker_volume:
+    type: OS::Cinder::Volume
+    properties:
+      name:
+        str_replace:
+          template: volume-<%prefix%>-<%suffix%>-docker
+          params:
+            "<%prefix%>": { get_param: instance_prefix }
+            "<%suffix%>": { get_param: instance_suffix }
+      size: { get_param: docker_volume_size }
+      volume_type: "Standard"
+
+  port:
+    type: OS::Neutron::Port
+    properties:
+      name:
+        str_replace:
+          template: port-<%prefix%>-<%suffix%>
+          params:
+            "<%prefix%>": { get_param: instance_prefix }
+            "<%suffix%>": { get_param: instance_suffix }
+      network: { get_param: network_id }
+      fixed_ips:
+        - subnet_id: { get_param: subnet_id }
+      port_security_enabled: True
+      security_groups: { get_param: security_groups }
+
+  default_password:
+    type: OS::Heat::RandomString
+    properties:
+      length: 32
+
+  cloud_init:
+    type: OS::Heat::CloudConfig
+    depends_on:
+      - default_password
+    properties:
+      cloud_config:
+        # Set the password for the default user
+        # See: https://cloudinit.readthedocs.io/en/latest/topics/modules.html#set-passwords
+        ssh_pwauth: no
+        password: { get_attr: [default_password, value] }
+        chpasswd: { expire: False }
+        # Set the timezone
+        # See: https://cloudinit.readthedocs.io/en/latest/topics/modules.html#timezone
+        timezone: "Europe/Rome"
+        # Update the installed packages and install additional tools
+        # See: https://cloudinit.readthedocs.io/en/latest/topics/modules.html#package-update-upgrade-install
+        package_update: True
+        package_upgrade: True
+        package_reboot_if_required: True
+        # Create init scripts
+        # See: http://cloudinit.readthedocs.io/en/latest/topics/modules.html#write-files
+        write_files:
+          - path: /usr/local/bin/init-docker-partition
+            permissions: "0755"
+            content: |
+              #!/bin/bash
+              if [ ! -f /.init-docker-partition ]; then
+                apt-get update
+                apt-get install -y lvm2
+                pvcreate /dev/vdb
+                vgcreate vg_docker /dev/vdb
+                lvcreate -l+100%FREE -n lv_docker vg_docker
+                mkfs.ext4 -F /dev/mapper/vg_docker-lv_docker
+                mkdir -p /var/lib/docker
+                echo '/dev/mapper/vg_docker-lv_docker /var/lib/docker ext4 defaults 0 2' >> /etc/fstab
+                mount -a
+                touch /.init-docker-partition
+              fi
+          - path: /usr/local/bin/bootstrap-docker-engine
+            permissions: "0755"
+            content: |
+              #!/bin/bash
+              if [ ! -f /.bootstrap-docker-engine ]; then
+                apt-get update
+                apt-get install -y \
+                  apt-transport-https \
+                  ca-certificates \
+                  curl \
+                  gnupg2 \
+                  software-properties-common
+
+                curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+
+                add-apt-repository \
+                  "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+                  $(lsb_release -cs) \
+                  stable"
+
+                apt-get update
+                apt-get install -y docker-ce
+
+                touch /.bootstrap-docker-engine
+              fi
+        # Run init scripts
+        # See: http://cloudinit.readthedocs.io/en/latest/topics/modules.html#runcmd
+        runcmd:
+          - [ "/usr/local/bin/init-docker-partition" ]
+          - [ "/usr/local/bin/bootstrap-docker-engine" ]
+
+  userdata:
+    type: OS::Heat::MultipartMime
+    depends_on:
+      - cloud_init
+    properties:
+      parts:
+        - config: { get_resource: cloud_init }
+
+  instance:
+    type: OS::Nova::Server
+    depends_on:
+      - port
+      - system_volume
+      - docker_volume
+      - userdata
+    properties:
+      name:
+        str_replace:
+          template: <%prefix%>-<%suffix%>
+          params:
+            "<%prefix%>": { get_param: instance_prefix }
+            "<%suffix%>": { get_param: instance_suffix }
+      block_device_mapping_v2:
+        - boot_index: 0
+          delete_on_termination: False
+          device_name: "vda"
+          device_type: disk
+          volume_id: { get_resource: system_volume }
+        - boot_index: -1
+          delete_on_termination: False
+          device_name: "vdb"
+          device_type: disk
+          volume_id: { get_resource: docker_volume }
+      diskConfig: AUTO
+      flavor: { get_param: flavor_id }
+      networks:
+        - port: { get_resource: port }
+      key_name: { get_param: key_name }
+      user_data_format: SOFTWARE_CONFIG
+      user_data: { get_resource: userdata }
+
+outputs:
+  password:
+    value: { get_attr: [default_password, value] }
+  ip:
+    value: { get_attr: [instance, networks, { get_param: network_id }, 0] }
+  name:
+    value: { get_attr: [instance, name] }
