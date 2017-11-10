@@ -42,6 +42,10 @@ parameters:
     label: "Docker volume size"
     type: number
     default: 5
+  timezone:
+    label: "Timezone"
+    type: string
+    default: "Europe/Rome"
   security_groups:
     label: "Security groups"
     type: comma_delimited_list
@@ -120,7 +124,7 @@ resources:
         chpasswd: { expire: False }
         # Set the timezone
         # See: https://cloudinit.readthedocs.io/en/latest/topics/modules.html#timezone
-        timezone: "Europe/Rome"
+        timezone: { get_param: timezone }
         # Update the installed packages and install additional tools
         # See: https://cloudinit.readthedocs.io/en/latest/topics/modules.html#package-update-upgrade-install
         package_update: True
