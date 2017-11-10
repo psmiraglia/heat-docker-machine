@@ -170,11 +170,27 @@ resources:
 
                 touch /.bootstrap-docker-engine
               fi
+          - path: /usr/local/bin/bootstrap-docker-compose
+            permissions: "0755"
+            content: |
+              #!/bin/bash
+              if [ ! -f /.bootstrap-docker-compose ]; then
+                apt-get update
+                apt-get install -y curl
+
+                curl \
+                  -L https://github.com/docker/compose/releases/download/1.17.1/docker-compose-Linux-x86_64 \
+                  -o /usr/local/bin/docker-compose
+                chmod +x /usr/local/bin/docker-compose
+
+                touch /.bootstrap-docker-compose
+              fi
         # Run init scripts
         # See: http://cloudinit.readthedocs.io/en/latest/topics/modules.html#runcmd
         runcmd:
           - [ "/usr/local/bin/init-docker-partition" ]
           - [ "/usr/local/bin/bootstrap-docker-engine" ]
+          - [ "/usr/local/bin/bootstrap-docker-compose" ]
 
   userdata:
     type: OS::Heat::MultipartMime
