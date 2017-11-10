@@ -1,0 +1,95 @@
+# Copyright (c) 2017 Paolo Smiraglia <paolo.smiraglia@gmail.com>
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+heat_template_version: 2016-04-08
+
+description: >
+  The stack creates a cluster of docker-machine instances.
+
+parameters:
+  cluster_size:
+    label: "Cluster size"
+    type: number
+    default: 3
+  instance_prefix:
+    label: "Instance prefix"
+    type: string
+    default: "docker-machine"
+  system_volume_size:
+    label: "System volume size"
+    type: number
+    default: 5
+  docker_volume_size:
+    label: "Docker volume size"
+    type: number
+    default: 5
+  security_groups:
+    label: "Security groups"
+    type: comma_delimited_list
+  image_id:
+    label: "Image ID"
+    type: string
+  flavor_id:
+    label: "Flavor ID"
+    type: string
+  network_id:
+    label: "Network ID"
+    type: string
+  subnet_id:
+    label: "Subnet ID"
+    type: string
+  key_name:
+    label: "Keypair name"
+    type: string
+
+resources:
+  cluster_id:
+    type: OS::Heat::RandomString
+    properties:
+      length: 8
+  docker_cluster:
+    type: OS::Heat::ResourceGroup
+    depends_on:
+      - cluster_id
+    properties:
+      count: { get_param: cluster_size }
+      index_var: <%index%>
+      resource_def:
+        type: docker-machine.yaml
+        properties:
+          instance_prefix:
+            str_replace:
+              template: <%instance_prefix%>-<%cluster_id%>
+              params:
+                "<%instance_prefix%>": { get_param: instance_prefix }
+                "<%cluster_id%>": { get_attr: [cluster_id, value] }
+          instance_suffix: <%index%>
+          system_volume_size: { get_param: system_volume_size }
+          docker_volume_size: { get_param: docker_volume_size }
+          security_groups: { get_param: security_groups }
+          image_id: { get_param: image_id }
+          flavor_id: { get_param: flavor_id }
+          network_id: { get_param: network_id }
+          subnet_id: { get_param: subnet_id }
+          key_name: { get_param: key_name }
+
+outputs:
+  cluster_id:
+    value: { get_attr: [cluster_id, value] }
