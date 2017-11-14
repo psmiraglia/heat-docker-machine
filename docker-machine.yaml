@@ -64,6 +64,10 @@ parameters:
   key_name:
     label: "Keypair name"
     type: string
+  extra_packages:
+    label: "Extra packages to be installed"
+    type: comma_delimited_list
+    default: []
 
 resources:
   system_volume:
@@ -103,7 +107,7 @@ resources:
       network: { get_param: network_id }
       fixed_ips:
         - subnet_id: { get_param: subnet_id }
-      port_security_enabled: True
+      # port_security_enabled: False
       security_groups: { get_param: security_groups }
 
   default_password:
@@ -130,6 +134,7 @@ resources:
         package_update: True
         package_upgrade: True
         package_reboot_if_required: True
+        packages: { get_param: extra_packages }
         # Create init scripts
         # See: http://cloudinit.readthedocs.io/en/latest/topics/modules.html#write-files
         write_files:

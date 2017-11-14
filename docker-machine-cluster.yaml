@@ -58,6 +58,10 @@ parameters:
   key_name:
     label: "Keypair name"
     type: string
+  extra_packages:
+    label: "Extra packages to be installed"
+    type: comma_delimited_list
+    default: []
 
 resources:
   cluster_id:
@@ -89,6 +93,7 @@ resources:
           network_id: { get_param: network_id }
           subnet_id: { get_param: subnet_id }
           key_name: { get_param: key_name }
+          extra_packages: { get_param: extra_packages }
 
 outputs:
   cluster_id:
