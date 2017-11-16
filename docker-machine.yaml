@@ -68,6 +68,10 @@ parameters:
     label: "Extra packages to be installed"
     type: comma_delimited_list
     default: []
+  docker_daemon_opts:
+    label: "Docker daemon options"
+    type: json
+    default: {}
 
 resources:
   system_volume:
@@ -179,6 +183,13 @@ resources:
 
                 touch /.bootstrap-docker-engine
               fi
+          - path: /etc/docker/daemon.json
+            permissions: "0755"
+            content:
+              str_replace:
+                template: <%daemon_opts%>
+                params:
+                  "<%daemon_opts%>": { get_param: docker_daemon_opts }
           - path: /usr/local/bin/bootstrap-docker-compose
             permissions: "0755"
             content: |

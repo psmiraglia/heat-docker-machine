@@ -62,6 +62,10 @@ parameters:
     label: "Extra packages to be installed"
     type: comma_delimited_list
     default: []
+  docker_daemon_opts:
+    label: "Docker daemon options"
+    type: json
+    default: {}
 
 resources:
   cluster_id:
@@ -94,6 +98,7 @@ resources:
           subnet_id: { get_param: subnet_id }
           key_name: { get_param: key_name }
           extra_packages: { get_param: extra_packages }
+          docker_daemon_opts: { get_param: docker_daemon_opts }
 
 outputs:
   cluster_id:
